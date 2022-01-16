@@ -44,6 +44,22 @@ from utils.callbacks import SaveVecNormalizeCallback, TrialEvalCallback
 from utils.hyperparams_opt import HYPERPARAMS_SAMPLER
 from utils.utils import ALGOS, get_callback_list, get_latest_run_id, get_wrapper_class, linear_schedule
 
+# For multiple jobs
+import multiprocessing as mp
+mp.set_start_method('spawn', force=True)
+
+
+def optimize_job(study, objective, n_trials=100, id=None):
+    id = 'Job' if id is None else f'Job {id}'
+    print(f'Starting {id}!')
+
+    try:
+        study.optimize(objective, n_trials=n_trials)
+    except KeyboardInterrupt:
+        print(f'Keyboard interrupt on {id}')
+    finally:
+        print(f'Ending {id}')
+
 
 class ExperimentManager(object):
     """
@@ -709,10 +725,20 @@ class ExperimentManager(object):
             direction="maximize",
         )
 
-        try:
-            study.optimize(self.objective, n_trials=self.n_trials, n_jobs=self.n_jobs)
-        except KeyboardInterrupt:
-            pass
+        if self.n_jobs > 1:
+            processes = []
+            for i in range(self.n_jobs):
+                p = mp.Process(target=optimize_job, args=(study, self.objective, self.n_trials, i))
+                processes.append(p)
+                p.start()
+
+            for p in processes:
+                p.join()
+        else:
+            try:
+                study.optimize(self.objective, n_trials=self.n_trials)
+            except KeyboardInterrupt:
+                pass
 
         print("Number of finished trials: ", len(study.trials))
 
